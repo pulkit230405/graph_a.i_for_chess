@@ -134,19 +134,34 @@ def draw_message():
         pygame.draw.rect(screen, (0,0,0,150), text_rect.inflate(20,20))
         screen.blit(text, text_rect)
 
+# In my_chess.py
+
 def check_game_status():
     global game_message, ai_thoughts
     if board.is_game_over():
-        ai_thoughts = []
-        if board.is_checkmate(): game_message = "Checkmate! Game Over."
-        elif board.is_stalemate(): game_message = "Stalemate!"
-        else: game_message = "Game Over"
+        ai_thoughts = [] # Clear thoughts on game over
+        outcome = board.outcome()
+        
+        if outcome.winner is not None:
+            game_message = "Checkmate! Game Over."
+        else:
+            # Handle different types of draws
+            if board.is_stalemate():
+                game_message = "Draw by Stalemate!"
+            elif board.is_insufficient_material():
+                game_message = "Draw by Insufficient Material!"
+            elif board.is_seventyfive_moves():
+                game_message = "Draw by 75-Move Rule!"
+            elif board.is_fivefold_repetition():
+                game_message = "Draw by Repetition!"
+            else:
+                game_message = "Draw!" # Generic draw
     else:
         game_message = ""
-
+        
 def handle_click(pos):
     global selected_square, knight_path, selected_for_pattern, knight_start, knight_end, ai_thoughts, post_search_eval
-    if board.is_game_over(): return
+    if board.is_game_over() or board.turn == chess.BLACK: return # Prevent clicks during AI's turn
     col, row = pos[0] // SQUARE_SIZE, pos[1] // SQUARE_SIZE
     sq = chess.square(col, 7 - row)
 
@@ -168,10 +183,10 @@ def handle_click(pos):
         if move in board.legal_moves:
             board.push(move)
             check_game_status()
-            draw_board(); draw_pieces(); draw_side_panel(); pygame.display.flip()
+            draw_board(); draw_pieces(); draw_side_panel(); pygame.display.flip() # Redraw after player moves
             
             if not board.is_game_over():
-                ai_move, thoughts = find_best_move(board, 3)
+                ai_move, thoughts = find_best_move(board, 4) # Set search depth
                 ai_thoughts = thoughts
                 if thoughts:
                     post_search_eval = thoughts[0][1]
@@ -181,6 +196,16 @@ def handle_click(pos):
         selected_square = None
         
 running = True
+# AI plays if it's black's turn to start
+if board.turn == chess.BLACK:
+    ai_move, thoughts = find_best_move(board, 4)
+    ai_thoughts = thoughts
+    if thoughts:
+        post_search_eval = thoughts[0][1]
+    if ai_move:
+        board.push(ai_move)
+    check_game_status()
+
 while running:
     draw_board()
     draw_pieces()
@@ -204,4 +229,4 @@ while running:
             check_game_status()
             ai_thoughts = []; post_search_eval = 0
 
-pygame.quit()
+pygame.quit()   
