@@ -200,18 +200,30 @@ def calculate_isolated_pawn_penalty(board: chess.Board, color: chess.Color) -> i
 
     return penalty
 
+# In graph_ai.py
+
 def evaluate_board(board: chess.Board) -> int:
     if board.is_checkmate():
         return -float('inf') if board.outcome().winner != board.turn else float('inf')
     if board.is_game_over():
         return 0
 
+    # Define all our weights
     w_mobility, w_control, w_king_safety = 5, 10, 15
 
-    # PST is now included in this material score
+    # Calculate base scores (positive is good)
     white_score = calculate_material_score(board, chess.WHITE) + calculate_pst_score(board, chess.WHITE)
     black_score = calculate_material_score(board, chess.BLACK) + calculate_pst_score(board, chess.BLACK)
     
+    # Calculate penalties (higher number is worse)
+    white_pawn_penalty = calculate_doubled_pawn_penalty(board, chess.WHITE) + calculate_isolated_pawn_penalty(board, chess.WHITE)
+    black_pawn_penalty = calculate_doubled_pawn_penalty(board, chess.BLACK) + calculate_isolated_pawn_penalty(board, chess.BLACK)
+
+    # Apply penalties
+    white_score -= white_pawn_penalty
+    black_score -= black_pawn_penalty
+    
+    # Calculate other graph metrics
     white_mobility = calculate_mobility_score(board, chess.WHITE)
     black_mobility = calculate_mobility_score(board, chess.BLACK)
     white_control = calculate_center_control_score(board, chess.WHITE)
@@ -219,6 +231,7 @@ def evaluate_board(board: chess.Board) -> int:
     white_king_threat = calculate_king_safety_score(board, chess.WHITE)
     black_king_threat = calculate_king_safety_score(board, chess.BLACK)
 
+    # Combine all evaluations
     material_eval = white_score - black_score
     mobility_eval = w_mobility * (white_mobility - black_mobility)
     control_eval = w_control * (white_control - black_control)
