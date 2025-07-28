@@ -1,6 +1,7 @@
 import chess
 import chess.polyglot
 
+# The Transposition Table (our AI's memory)
 transposition_table = {}
 
 PIECE_VALUES = {
@@ -8,7 +9,6 @@ PIECE_VALUES = {
     chess.ROOK: 500, chess.QUEEN: 900, chess.KING: 20000
 }
 
-# === MODIFIED: Renamed KING_PST and added KING_PST_ENDGAME ===
 PAWN_PST = [
     0,  0,  0,  0,  0,  0,  0,  0,
     50, 50, 50, 50, 50, 50, 50, 50,
@@ -59,52 +59,36 @@ KING_PST_ENDGAME = [
 PST = {
     chess.PAWN: PAWN_PST, chess.KNIGHT: KNIGHT_PST, chess.BISHOP: BISHOP_PST,
     chess.ROOK: ROOK_PST, chess.QUEEN: QUEEN_PST,
-    # King now has two tables
     'KING_MG': KING_PST_MIDDLEGAME, 'KING_EG': KING_PST_ENDGAME
 }
 
-# === NEW: Function to determine the game phase ===
 def get_game_phase(board: chess.Board) -> str:
-    """Determines if the game is in middlegame or endgame."""
-    # Count the value of major and minor pieces on the board
     material_count = 0
     for square in chess.SQUARES:
         piece = board.piece_at(square)
         if piece and piece.piece_type not in [chess.PAWN, chess.KING]:
             material_count += PIECE_VALUES.get(piece.piece_type, 0)
-    
-    # A simple threshold to define endgame
-    if material_count < 2000: # Less than 2 rooks + 2 minor pieces
-        return "EG" # Endgame
+    if material_count < 2000:
+        return "EG"
     else:
-        return "MG" # Middlegame
+        return "MG"
 
-# === MODIFIED: calculate_pst_score is now game-phase aware ===
 def calculate_pst_score(board: chess.Board, color: chess.Color) -> int:
     score = 0
     game_phase = get_game_phase(board)
-
     for square in chess.SQUARES:
         piece = board.piece_at(square)
         if piece and piece.color == color:
             pst_table = None
             if piece.piece_type == chess.KING:
-                # Choose the correct King PST based on game phase
                 pst_table = PST[f'KING_{game_phase}']
             else:
                 pst_table = PST.get(piece.piece_type)
-            
             if pst_table:
                 if color == chess.BLACK:
                     square = chess.square_mirror(square)
                 score += pst_table[square]
     return score
-
-# ... (all other functions like calculate_material, mobility, etc. remain the same) ...
-
-# NOTE: The rest of your graph_ai.py file does not need to be changed.
-# The evaluate_board function will automatically use the updated calculate_pst_score.
-# I am including the full file below for completeness.
 
 def calculate_material_score(board: chess.Board, color: chess.Color) -> int:
     score = 0
@@ -144,63 +128,44 @@ def calculate_king_safety_score(board: chess.Board, color: chess.Color) -> int:
     for square in king_zone:
         attack_score += len(board.attackers(opponent_color, square))
     return attack_score
-# In graph_ai.py
 
 def calculate_doubled_pawn_penalty(board: chess.Board, color: chess.Color) -> int:
-    """Calculates the penalty for doubled pawns."""
     penalty = 0
     pawn_char = 'P' if color == chess.WHITE else 'p'
-    
-    for file_index in range(8): # Iterate through files a-h
+    for file_index in range(8):
         pawn_count = 0
-        for rank_index in range(8): # Iterate through ranks 1-8
+        for rank_index in range(8):
             square = chess.square(file_index, rank_index)
             piece = board.piece_at(square)
             if piece and piece.symbol() == pawn_char:
                 pawn_count += 1
         if pawn_count > 1:
-            penalty += (pawn_count - 1) * 20 # Penalty of -20 for each extra pawn
-            
+            penalty += (pawn_count - 1) * 20
     return penalty
 
 def calculate_isolated_pawn_penalty(board: chess.Board, color: chess.Color) -> int:
-    """Calculates the penalty for isolated pawns."""
     penalty = 0
     pawn_char = 'P' if color == chess.WHITE else 'p'
-
     for file_index in range(8):
         for rank_index in range(8):
             square = chess.square(file_index, rank_index)
             piece = board.piece_at(square)
-
             if piece and piece.symbol() == pawn_char:
-                # Check for friendly pawns on adjacent files
                 is_isolated = True
-                # Check left file
                 if file_index > 0:
                     for r in range(8):
                         adj_square = chess.square(file_index - 1, r)
-                        adj_piece = board.piece_at(adj_square)
-                        if adj_piece and adj_piece.symbol() == pawn_char:
-                            is_isolated = False
-                            break
+                        if board.piece_at(adj_square) and board.piece_at(adj_square).symbol() == pawn_char:
+                            is_isolated = False; break
                 if not is_isolated: continue
-
-                # Check right file
                 if file_index < 7:
                     for r in range(8):
                         adj_square = chess.square(file_index + 1, r)
-                        adj_piece = board.piece_at(adj_square)
-                        if adj_piece and adj_piece.symbol() == pawn_char:
-                            is_isolated = False
-                            break
-                
+                        if board.piece_at(adj_square) and board.piece_at(adj_square).symbol() == pawn_char:
+                            is_isolated = False; break
                 if is_isolated:
-                    penalty += 15 # Penalty of -15 for each isolated pawn
-
+                    penalty += 15
     return penalty
-
-# In graph_ai.py
 
 def evaluate_board(board: chess.Board) -> int:
     if board.is_checkmate():
@@ -208,35 +173,23 @@ def evaluate_board(board: chess.Board) -> int:
     if board.is_game_over():
         return 0
 
-    # Define all our weights
     w_mobility, w_control, w_king_safety = 5, 10, 15
-
-    # Calculate base scores (positive is good)
     white_score = calculate_material_score(board, chess.WHITE) + calculate_pst_score(board, chess.WHITE)
     black_score = calculate_material_score(board, chess.BLACK) + calculate_pst_score(board, chess.BLACK)
-    
-    # Calculate penalties (higher number is worse)
     white_pawn_penalty = calculate_doubled_pawn_penalty(board, chess.WHITE) + calculate_isolated_pawn_penalty(board, chess.WHITE)
     black_pawn_penalty = calculate_doubled_pawn_penalty(board, chess.BLACK) + calculate_isolated_pawn_penalty(board, chess.BLACK)
-
-    # Apply penalties
     white_score -= white_pawn_penalty
     black_score -= black_pawn_penalty
-    
-    # Calculate other graph metrics
     white_mobility = calculate_mobility_score(board, chess.WHITE)
     black_mobility = calculate_mobility_score(board, chess.BLACK)
     white_control = calculate_center_control_score(board, chess.WHITE)
     black_control = calculate_center_control_score(board, chess.BLACK)
     white_king_threat = calculate_king_safety_score(board, chess.WHITE)
     black_king_threat = calculate_king_safety_score(board, chess.BLACK)
-
-    # Combine all evaluations
     material_eval = white_score - black_score
     mobility_eval = w_mobility * (white_mobility - black_mobility)
     control_eval = w_control * (white_control - black_control)
     safety_eval = w_king_safety * (black_king_threat - white_king_threat)
-    
     total_eval = material_eval + mobility_eval + control_eval + safety_eval
     return total_eval if board.turn == chess.WHITE else -total_eval
 
