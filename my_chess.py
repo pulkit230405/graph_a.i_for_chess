@@ -1,5 +1,3 @@
-# my_chess.py
-
 import os, sys, pygame, chess
 from collections import deque
 from graph_ai import evaluate_board, find_best_move
@@ -24,7 +22,7 @@ screen = pygame.display.set_mode((WIDTH + SIDE_PANEL_WIDTH, HEIGHT))
 pygame.display.set_caption("Chess")
 font, small_font = pygame.font.Font(None, 36), pygame.font.Font(None, 24)
 
-# === NEW: Added ai_thoughts to store analysis ===
+post_search_eval = 0
 ai_thoughts = []
 game_message = ""
 show_knight_path = show_attack_pattern = False
@@ -54,20 +52,19 @@ def handle_button_click(pos):
 def draw_eval_bar():
     bar_x, bar_w = WIDTH + 160, 20
     pygame.draw.rect(screen, (0, 0, 0), (bar_x, 0, bar_w, HEIGHT))
-    eval_for_white = evaluate_board(board) if board.turn == chess.WHITE else -evaluate_board(board)
+    eval_for_white = -post_search_eval if board.turn == chess.WHITE else post_search_eval
     eval_for_white_normalized = max(min(eval_for_white, 500), -500) / 500
     white_bar_height = int(((eval_for_white_normalized + 1) / 2) * HEIGHT)
     pygame.draw.rect(screen, (255, 255, 255), (bar_x, HEIGHT - white_bar_height, bar_w, white_bar_height))
     pygame.draw.rect(screen, (80, 80, 80), (bar_x, 0, bar_w, HEIGHT - white_bar_height))
 
-# === NEW: Function to draw the AI's thoughts ===
 def draw_ai_thought_panel():
-    pygame.draw.rect(screen, (30, 30, 30), (WIDTH, 0, SIDE_PANEL_WIDTH, 400))
     screen.blit(font.render("AI Thoughts", True, (255, 255, 255)), (WIDTH + 10, 10))
     for i, (move_san, eval_score) in enumerate(ai_thoughts):
         y = 50 + 40 * i
-        screen.blit(small_font.render(f"{i+1}. {move_san}", True, (200, 200, 100)), (WIDTH + 10, y))
-        screen.blit(small_font.render(f"Eval: {eval_score/100.0:.2f}", True, (180, 180, 180)), (WIDTH + 100, y))
+        text_color = (220, 220, 100) if eval_score == ai_thoughts[0][1] else (180, 180, 180)
+        screen.blit(small_font.render(f"{i+1}. {move_san}", True, text_color), (WIDTH + 10, y))
+        screen.blit(small_font.render(f"{eval_score/100.0:+.2f}", True, text_color), (WIDTH + 100, y))
 
 def draw_side_panel():
     panel_rect = pygame.Rect(WIDTH, 0, SIDE_PANEL_WIDTH, HEIGHT)
@@ -140,22 +137,23 @@ def draw_message():
 def check_game_status():
     global game_message, ai_thoughts
     if board.is_game_over():
-        ai_thoughts = [] # Clear thoughts on game over
+        ai_thoughts = []
         if board.is_checkmate(): game_message = "Checkmate! Game Over."
-        elif board.is_stalemate(): game_message = "It's a stalemate!"
+        elif board.is_stalemate(): game_message = "Stalemate!"
         else: game_message = "Game Over"
     else:
         game_message = ""
 
-# === UPDATED: handle_click now captures AI thoughts ===
 def handle_click(pos):
-    global selected_square, knight_path, selected_for_pattern, knight_start, knight_end, ai_thoughts
+    global selected_square, knight_path, selected_for_pattern, knight_start, knight_end, ai_thoughts, post_search_eval
     if board.is_game_over(): return
     col, row = pos[0] // SQUARE_SIZE, pos[1] // SQUARE_SIZE
     sq = chess.square(col, 7 - row)
 
     if show_knight_path:
-        # Knight path logic remains the same
+        if knight_start is None: knight_start = sq
+        else:
+            knight_end = sq; knight_path = knight_shortest_path(knight_start, knight_end) or []; knight_start = None
         return
 
     if selected_square is None:
@@ -173,8 +171,10 @@ def handle_click(pos):
             draw_board(); draw_pieces(); draw_side_panel(); pygame.display.flip()
             
             if not board.is_game_over():
-                ai_move, thoughts = find_best_move(board, 4) # Set depth here
+                ai_move, thoughts = find_best_move(board, 3)
                 ai_thoughts = thoughts
+                if thoughts:
+                    post_search_eval = thoughts[0][1]
                 if ai_move:
                     board.push(ai_move)
                 check_game_status()
@@ -202,6 +202,6 @@ while running:
             if board.move_stack: board.pop()
             if board.move_stack: board.pop()
             check_game_status()
-            ai_thoughts = [] # Clear thoughts on undo
+            ai_thoughts = []; post_search_eval = 0
 
 pygame.quit()
